@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kidcut"
+version = "0.1.0"
+description = "AI-powered tool to remove adult scenes from MKV movies"
+requires-python = ">=3.11"
+dependencies = [
+  "questionary>=2.0",
+  "requests>=2.32",
+  "rich>=13.7",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
