@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
 
         output_path = _get_output_path(mkv_path)
         console.print(f"Cutting [bold]{len(to_cut)}[/bold] scene(s)...")
-        run_with_spinner(console, "Cutting scenes", lambda: cut_scenes(mkv_path, to_cut, output_path))
+        cut_scenes(mkv_path, to_cut, output_path)
         console.print(f"[green]Done![/green] Output saved to [bold]{output_path}[/bold]")
         return 0
     except KeyboardInterrupt:

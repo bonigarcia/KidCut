@@ -1,14 +1,10 @@
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from kidscan.models import CutScene, MkvTrack
-
-
-MARGIN = 2.0
 
 
 def check_binary() -> None:
@@ -49,26 +45,12 @@ def get_timestamp_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
-def _format_ts(seconds: float) -> str:
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}"
-
-
-def _extract_segment(mkv_path: str, start: float, end: float, output_path: str) -> None:
-    duration = end - start
-    subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(start), "-i", mkv_path,
-         "-t", _format_ts(duration), "-c", "copy", "-avoid_negative_ts", "1", output_path],
-        check=True,
-    )
-
-
 def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -> None:
     if not scenes_to_cut:
         Path(output_path).write_bytes(Path(mkv_path).read_bytes())
         return
+
+    MARGIN = 0.2
 
     probe = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", mkv_path],
@@ -79,33 +61,38 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    segments: list[tuple[float, float]] = []
+    select_terms = []
     cursor = 0.0
     for start, end in cut_ranges:
-        safe_end = max(0.0, start - MARGIN)
-        if safe_end > cursor + 0.5:
-            segments.append((cursor, safe_end))
-        cursor = min(duration, end + MARGIN)
-    if duration - cursor > 0.5:
-        segments.append((cursor, duration))
+        if start > cursor + MARGIN:
+            select_terms.append(f"between(t,{cursor},{start})")
+        cursor = max(cursor, end)
+    if duration - cursor > MARGIN:
+        select_terms.append(f"between(t,{cursor},{duration})")
 
-    if not segments:
+    if not select_terms:
         raise RuntimeError("No clean segments remain.")
 
-    tmpdir = Path(tempfile.mkdtemp())
+    select_expr = "+".join(select_terms)
+    filter_graph = (
+        f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
+        f"aselect='{select_expr}',asetpts=N/SR/TB[a]"
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        filter_path = f.name
+        f.write(filter_graph)
+
     try:
-        concat_lines = []
-        for i, (seg_start, seg_end) in enumerate(segments):
-            seg_path = tmpdir / f"seg{i:04d}.mkv"
-            _extract_segment(mkv_path, seg_start, seg_end, str(seg_path))
-            concat_lines.append(f"file '{seg_path}'")
-
-        concat_path = tmpdir / "concat.txt"
-        concat_path.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
-
-        subprocess.run(
-            ["ffmpeg", "-v", "quiet", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_path), "-c", "copy", output_path],
-            check=True,
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", mkv_path,
+             "-filter_complex_script", filter_path,
+             "-map", "[v]", "-map", "[a]", "-map", "0:s?", "-c:s", "copy",
+             "-preset", "ultrafast", "-crf", "23",
+             output_path],
+            capture_output=True, text=True, check=True,
         )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg stderr: {e.stderr[:2000]}")
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        os.unlink(filter_path)
