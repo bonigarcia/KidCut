@@ -100,7 +100,14 @@ def build_request_completion(vendor_name: str, model: str, api_key: str | None =
         response.raise_for_status()
         payload = response.json()
         usage = payload.get("usageMetadata", {})
-        return payload["candidates"][0]["content"]["parts"][0]["text"], usage.get("promptTokenCount"), usage.get("candidatesTokenCount")
+        candidates = payload.get("candidates")
+        if not candidates:
+            raise RuntimeError(f"Google API response missing 'candidates': {payload}")
+        content = candidates[0].get("content", {})
+        parts = content.get("parts", [])
+        if not parts:
+            raise RuntimeError(f"Google API response missing parts: {payload}")
+        return parts[0].get("text", ""), usage.get("promptTokenCount"), usage.get("candidatesTokenCount")
 
     return request_completion
 
