@@ -94,7 +94,13 @@ def build_request_completion(vendor_name: str, model: str, api_key: str | None =
 
         response = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
-            json={"contents": [{"parts": [{"text": prompt}]}]},
+            json={"contents": [{"parts": [{"text": prompt}]}],
+                  "safetySettings": [
+                      {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                      {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                      {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                      {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                  ]},
             timeout=120,
         )
         response.raise_for_status()
