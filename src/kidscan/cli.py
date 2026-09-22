@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 
 import questionary
+from prompt_toolkit.shortcuts import radiolist_dialog
+from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 
 from kidscan.editor import auto_edit, manual_edit
@@ -37,24 +39,19 @@ def confirm_cut(message: str, choices: list[str], default: str | None = None) ->
 def _find_mkv_path(console: Console) -> str:
     current = Path.home()
     while True:
-        items = []
-        try:
-            entries = sorted(current.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        except PermissionError:
-            current = current.parent
-            continue
-        if current.parent != current:
-            items.append("[..]")
-        for entry in entries:
-            if entry.name.startswith("."):
-                continue
-            if entry.is_dir():
-                items.append(f"[{entry.name}]")
-            elif entry.suffix.lower() == ".mkv":
-                items.append(entry.name)
+        items = [(i, i) for i in _list_dir_items(current)]
         if not items:
             raise RuntimeError(f"No MKV files or directories in {current}")
-        selected = choose_from_options(f"MKV file ({current})", items, default=items[0])
+        try:
+            selected = radiolist_dialog(
+                title="MKV file",
+                text=HTML(f"<b>{current}</b>"),
+                values=items,
+                ok_text="Enter",
+                cancel_text="Cancel",
+            ).run()
+        except (KeyboardInterrupt, EOFError):
+            raise KeyboardInterrupt
         if selected is None:
             raise KeyboardInterrupt
         if selected == "[..]":
@@ -66,6 +63,24 @@ def _find_mkv_path(console: Console) -> str:
             if not os.path.isfile(path):
                 raise RuntimeError("Selected file not found.")
             return path
+
+
+def _list_dir_items(current: Path) -> list[str]:
+    items = []
+    try:
+        entries = sorted(current.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    except PermissionError:
+        return items
+    if current.parent != current:
+        items.append("[..]")
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        if entry.is_dir():
+            items.append(f"[{entry.name}]")
+        elif entry.suffix.lower() == ".mkv":
+            items.append(entry.name)
+    return items
 
 
 def _auto_select_subtitle_track(tracks, default_audio_lang: str) -> int | None:
