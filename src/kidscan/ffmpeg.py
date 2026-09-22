@@ -50,7 +50,7 @@ def _format_ts(seconds: float) -> str:
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+    return f"{h:02d}:{m:02d}:{s:06.3f}"
 
 
 def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[float, float]]:

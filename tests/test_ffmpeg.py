@@ -20,8 +20,8 @@ def test_get_timestamp_seconds():
 
 
 def test_format_timestamp():
-    assert _format_ts(90.5) == "00:01:30,500"
+    assert _format_ts(90.5) == "00:01:30.500"
 
 
 def test_format_timestamp_hours():
-    assert _format_ts(3661.0) == "01:01:01,000"
+    assert _format_ts(3661.0) == "01:01:01.000"
