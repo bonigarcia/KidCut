@@ -35,7 +35,7 @@ def confirm_cut(message: str, choices: list[str], default: str | None = None) ->
 
 
 def _find_mkv_path(console: Console) -> str:
-    current = Path.cwd()
+    current = Path.home()
     while True:
         items = []
         try:
@@ -46,6 +46,8 @@ def _find_mkv_path(console: Console) -> str:
         if current.parent != current:
             items.append("[..]")
         for entry in entries:
+            if entry.name.startswith("."):
+                continue
             if entry.is_dir():
                 items.append(f"[{entry.name}]")
             elif entry.suffix.lower() == ".mkv":
