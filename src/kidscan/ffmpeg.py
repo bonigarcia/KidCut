@@ -53,6 +53,9 @@ def _format_ts(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:06.3f}"
 
 
+SAFETY_MARGIN = 1.0
+
+
 def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[float, float]]:
     probe = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", mkv_path],
@@ -66,9 +69,10 @@ def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[
     segments: list[tuple[float, float]] = []
     cursor = 0.0
     for start, end in cut_ranges:
-        if start > cursor + 0.5:
-            segments.append((cursor, start))
-        cursor = max(cursor, end)
+        safe_end = start - SAFETY_MARGIN
+        if safe_end > cursor + 0.5:
+            segments.append((cursor, safe_end))
+        cursor = max(cursor, end + SAFETY_MARGIN)
     if duration - cursor > 0.5:
         segments.append((cursor, duration))
     return segments
