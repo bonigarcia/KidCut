@@ -1,6 +1,6 @@
 # KidCut ![](https://bonigarcia.dev/img/kidcut.png)
 
-AI-powered CLI tool that detects and removes adult scenes from MKV movies, creating kid-friendly versions. Uses AI models to analyze subtitles and ffmpeg to trim inappropriate scenes (drugs, sex, extreme violence, adult content).
+AI-powered CLI tool that detects and removes adult scenes from MKV movies, creating kid-friendly versions. Uses AI models to analyze subtitles and [ffmpeg](https://ffmpeg.org/) to trim inappropriate scenes (adult content).
 
 
 ## Quickstart
@@ -18,7 +18,7 @@ python -m kidcut
 3. **Subtitle extraction** — extracts and parses SRT/ASS text subtitles
 4. **Choose AI provider** — supports OpenAI, Anthropic, Google, OpenRouter, and Ollama (when running locally)
 5. **AI analysis** — model flags individual subtitle entries with inappropriate language
-6. **Edit mode** — choose **Automatic** (cut all flagged entries) or **Manual** (review each one by one)
+6. **Edit mode** — choose *Automatic* (cut all flagged entries) or *Manual* (review each one by one)
 7. **Output** — ffmpeg re-encodes the video to produce `input-kidcut.mkv` with flagged frames removed (frame-accurate cuts)
 
 ### Requirements
