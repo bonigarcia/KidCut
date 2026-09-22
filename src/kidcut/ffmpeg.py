@@ -40,6 +40,7 @@ def extract_subtitles(mkv_path: str, track_index: int) -> str:
 
 
 def get_timestamp_seconds(ts: str) -> float:
+    ts = ts.split(" --> ")[0].strip()
     parts = ts.replace(",", ".").split(":")
     h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
     return h * 3600 + m * 60 + s
