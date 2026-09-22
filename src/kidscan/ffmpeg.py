@@ -56,6 +56,64 @@ def _format_ts(seconds: float) -> str:
 SAFETY_MARGIN = 1.0
 
 
+def _find_keyframes_before(mkv_path: str, timestamp: float, window: float = 10.0) -> list[float]:
+    start = max(0, timestamp - window)
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-select_streams", "v", "-show_frames",
+         "-show_entries", "frame=pkt_pts_time,pict_type",
+         "-read_intervals", f"{_format_ts(start)}%+{window}",
+         "-of", "csv=p=0", mkv_path],
+        capture_output=True, text=True, check=True,
+    )
+    keyframes = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split(",")
+        if len(parts) >= 2 and parts[1] == "I":
+            try:
+                pts = float(parts[0])
+                if pts < timestamp - 0.01:
+                    keyframes.append(pts)
+            except ValueError:
+                continue
+    return keyframes
+
+
+def _find_keyframes_after(mkv_path: str, timestamp: float, window: float = 10.0) -> list[float]:
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-select_streams", "v", "-show_frames",
+         "-show_entries", "frame=pkt_pts_time,pict_type",
+         "-read_intervals", f"{_format_ts(timestamp)}%+{window}",
+         "-of", "csv=p=0", mkv_path],
+        capture_output=True, text=True, check=True,
+    )
+    keyframes = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split(",")
+        if len(parts) >= 2 and parts[1] == "I":
+            try:
+                pts = float(parts[0])
+                if pts > timestamp + 0.01:
+                    keyframes.append(pts)
+            except ValueError:
+                continue
+    return keyframes
+
+
+def _snap_to_keyframes(mkv_path: str, cut_ranges: list[tuple[float, float]], duration: float) -> list[tuple[float, float]]:
+    segments: list[tuple[float, float]] = []
+    cursor = 0.0
+    for start, end in cut_ranges:
+        kfs_before = _find_keyframes_before(mkv_path, start)
+        safe_end = kfs_before[-1] if kfs_before else max(0, start - 1.0)
+        if safe_end > cursor + 0.5:
+            segments.append((cursor, safe_end))
+        kfs_after = _find_keyframes_after(mkv_path, end)
+        cursor = kfs_after[0] if kfs_after else min(duration, end + 1.0)
+    if duration - cursor > 0.5:
+        segments.append((cursor, duration))
+    return segments
+
+
 def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[float, float]]:
     probe = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", mkv_path],
@@ -66,16 +124,7 @@ def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    segments: list[tuple[float, float]] = []
-    cursor = 0.0
-    for start, end in cut_ranges:
-        safe_end = start - SAFETY_MARGIN
-        if safe_end > cursor + 0.5:
-            segments.append((cursor, safe_end))
-        cursor = max(cursor, end + SAFETY_MARGIN)
-    if duration - cursor > 0.5:
-        segments.append((cursor, duration))
-    return segments
+    return _snap_to_keyframes(mkv_path, cut_ranges, duration)
 
 
 def _extract_segment(mkv_path: str, start: float, end: float, output_path: str) -> None:
