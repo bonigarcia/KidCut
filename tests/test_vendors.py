@@ -5,11 +5,12 @@ def test_discover_vendors_includes_only_available_backends(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
     monkeypatch.setattr("kidscan.vendors.ollama_is_available", lambda: True)
 
     vendors = discover_vendors()
 
-    assert [vendor.name for vendor in vendors] == ["OpenAI", "Google", "Ollama"]
+    assert [vendor.name for vendor in vendors] == ["OpenAI", "Google", "OpenRouter", "Ollama"]
 
 
 def test_list_models_for_vendor_reads_provider_api(monkeypatch):
@@ -24,7 +25,29 @@ def test_list_models_for_vendor_reads_provider_api(monkeypatch):
 
     models = list_models_for_vendor("OpenAI", api_key="openai-key")
 
-    assert models == ["gpt-4o-mini", "gpt-4.1-mini"]
+    assert models == ["gpt-4.1-mini", "gpt-4o-mini"]
+
+
+def test_list_models_for_openrouter(monkeypatch):
+    urls_called: list[str] = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"id": "openai/gpt-4o"}, {"id": "anthropic/claude-3"}]}
+
+    def fake_get(url, **kwargs):
+        urls_called.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr("kidscan.vendors.requests.get", fake_get)
+
+    models = list_models_for_vendor("OpenRouter", api_key="or-key")
+
+    assert models == ["anthropic/claude-3", "openai/gpt-4o"]
+    assert urls_called[0].startswith("https://openrouter.ai")
 
 
 from kidscan.models import SubtitleEntry, CutScene
