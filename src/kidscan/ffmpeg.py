@@ -59,23 +59,29 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    select_terms = []
+    segments: list[tuple[float, float]] = []
     cursor = 0.0
     for start, end in cut_ranges:
         if start > cursor + 0.5:
-            select_terms.append(f"between(t,{cursor},{start})")
+            segments.append((cursor, start))
         cursor = max(cursor, end)
     if duration - cursor > 0.5:
-        select_terms.append(f"between(t,{cursor},{duration})")
+        segments.append((cursor, duration))
 
-    if not select_terms:
+    if not segments:
         raise RuntimeError("No clean segments remain.")
 
-    select_expr = "+".join(select_terms)
-    filter_graph = (
-        f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
-        f"aselect='{select_expr}',asetpts=N/SR/TB[a]"
-    )
+    filter_parts = []
+    for i, (seg_start, seg_end) in enumerate(segments):
+        filter_parts.append(
+            f"[0:v]trim=start={seg_start}:end={seg_end},setpts=PTS-STARTPTS[v{i}];"
+            f"[0:a]atrim=start={seg_start}:end={seg_end},asetpts=PTS-STARTPTS[a{i}];"
+        )
+
+    vid_links = "".join(f"[v{i}]" for i in range(len(segments)))
+    aud_links = "".join(f"[a{i}]" for i in range(len(segments)))
+    filter_parts.append(f"{vid_links}{aud_links}concat=n={len(segments)}:v=1:a=1[outv][outa]")
+    filter_graph = " ".join(filter_parts)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         filter_path = f.name
@@ -85,7 +91,7 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
         subprocess.run(
             ["ffmpeg", "-v", "quiet", "-y", "-i", mkv_path,
              "-filter_complex_script", filter_path,
-             "-map", "[v]", "-map", "[a]", "-map", "0:s?", "-c:s", "copy",
+             "-map", "[outv]", "-map", "[outa]", "-map", "0:s?", "-c:s", "copy",
              "-preset", "ultrafast", "-crf", "23",
              output_path],
             check=True,
