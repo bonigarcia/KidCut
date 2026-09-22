@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -66,46 +65,59 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, m
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    tmpdir = Path(tempfile.mkdtemp())
-    try:
-        concat_lines = []
-        cursor = 0.0
-        for start, end in cut_ranges:
-            clip_end = max(0.0, start - margin)
-            if clip_end > cursor + 0.1:
-                seg = tmpdir / f"seg{len(concat_lines):04d}.mkv"
-                subprocess.run(
-                    ["ffmpeg", "-v", "quiet", "-y", "-ss", _fmt(cursor), "-i", mkv_path,
-                     "-t", _fmt(clip_end - cursor), "-c", "copy", "-avoid_negative_ts", "1", str(seg)],
-                    check=True,
-                )
-                concat_lines.append(f"file '{seg}'")
-            cursor = max(cursor, end + margin)
-        if duration - cursor > 0.1:
-            seg = tmpdir / f"seg{len(concat_lines):04d}.mkv"
-            subprocess.run(
-                ["ffmpeg", "-v", "quiet", "-y", "-ss", _fmt(cursor), "-i", mkv_path,
-                 "-t", _fmt(duration - cursor), "-c", "copy", "-avoid_negative_ts", "1", str(seg)],
-                check=True,
+    filter_parts = []
+    cursor = 0.0
+    idx = 0
+    for start, end in cut_ranges:
+        clip_end = max(0.0, start - margin)
+        if clip_end > cursor + 0.1:
+            filter_parts.append(
+                f"[0:v]trim=start={cursor:.3f}:end={clip_end:.3f},setpts=N/FRAME_RATE/TB[v{idx}];"
+                f"[0:a]atrim=start={cursor:.3f}:end={clip_end:.3f},asetpts=PTS-STARTPTS[a{idx}];"
             )
-            concat_lines.append(f"file '{seg}'")
+            idx += 1
+        cursor = max(cursor, end + margin)
+    if duration - cursor > 0.1:
+        filter_parts.append(
+            f"[0:v]trim=start={cursor:.3f}:end={duration:.3f},setpts=N/FRAME_RATE/TB[v{idx}];"
+            f"[0:a]atrim=start={cursor:.3f}:end={duration:.3f},asetpts=PTS-STARTPTS[a{idx}];"
+        )
+        idx += 1
 
-        if not concat_lines:
-            return
-        if len(concat_lines) == 1:
-            shutil.copy(next(tmpdir.iterdir()), output_path)
-            return
-
-        concat_txt = tmpdir / "concat.txt"
-        concat_txt.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
-
+    if idx == 0:
+        return
+    if idx == 1:
         subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_txt),
+            ["ffmpeg", "-y", "-i", mkv_path,
+             "-vf", f"trim=start={cursor:.3f}:end={duration:.3f},setpts=PTS-STARTPTS",
+             "-af", f"atrim=start={cursor:.3f}:end={duration:.3f},asetpts=PTS-STARTPTS",
              "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-             "-c:a", "aac", "-b:a", "640k", output_path],
+             "-c:a", "aac", output_path],
             check=True, capture_output=True, text=True,
         )
+        return
+
+    segment_links = "".join(f"[v{i}][a{i}]" for i in range(idx))
+    filter_parts.append(f"{segment_links}concat=n={idx}:v=1:a=1[outv][outa]")
+    filter_graph = " ".join(filter_parts)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        filter_path = f.name
+        f.write(filter_graph)
+
+    try:
+        ps_cmd = (
+            f'$f = Get-Content "{filter_path}" -Raw; '
+            f'ffmpeg -y -i "{mkv_path}" '
+            f'-filter_complex $f '
+            f'-map "[outv]" -map "[outa]" '
+            f'-c:v libx264 -preset ultrafast -crf 23 '
+            f'-c:a aac '
+            f'-b:a 640k '
+            f'"{output_path}"'
+        )
+        subprocess.run(["powershell", "-Command", ps_cmd], check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg error: {e.stderr[:2000]}")
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        os.unlink(filter_path)
