@@ -15,7 +15,7 @@ from kidscan.vendors import discover_vendors, list_models_for_vendor
 
 def choose_from_options(message: str, choices: list[str], default: str | None = None) -> str | None:
     try:
-        return questionary.select(message, choices=choices, default=default).ask()
+        return questionary.select(message, choices=choices, default=default, use_shortcuts=True).ask()
     except (KeyboardInterrupt, EOFError):
         return None
 
@@ -29,7 +29,7 @@ def choose_text(message: str, default: str | None = None) -> str | None:
 
 def confirm_cut(message: str, choices: list[str], default: str | None = None) -> str | None:
     try:
-        return questionary.select(message, choices=choices, default=default).ask()
+        return questionary.select(message, choices=choices, default=default, use_shortcuts=True).ask()
     except (KeyboardInterrupt, EOFError):
         return None
 
@@ -164,8 +164,7 @@ def main(argv: list[str] | None = None) -> int:
 
         run, scenes = run_with_spinner(
             console, "Analyzing subtitles with AI",
-            lambda: analyze_subtitles(subtitle_entries, mkv_path, request_completion, vendor_name, model,
-                                      with_spinner=lambda msg, fn: run_with_spinner(console, msg, fn)),
+            lambda: analyze_subtitles(subtitle_entries, mkv_path, request_completion, vendor_name, model),
         )
         if not scenes:
             console.print("[green]No inappropriate scenes detected.[/green]")

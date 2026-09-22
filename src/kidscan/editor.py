@@ -13,6 +13,8 @@ def manual_edit(scenes: list[CutScene], confirm_fn) -> list[CutScene]:
             choices=["Cut", "Keep"],
             default="Cut",
         )
+        if choice is None:
+            raise KeyboardInterrupt
         if choice == "Cut":
             kept.append(scene)
     return kept
