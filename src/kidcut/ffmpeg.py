@@ -84,13 +84,18 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
         f.write(filter_graph)
 
     try:
+        ps_cmd = (
+            f'$f = Get-Content "{filter_path}" -Raw; '
+            f'ffmpeg -y -i "{mkv_path}" '
+            f'-filter_complex $f '
+            f'-map "[v]" -map "[a]" '
+            f'-preset ultrafast -crf 23 "{output_path}"'
+        )
         subprocess.run(
-            f'set /p filter=<"{filter_path}" && ffmpeg -y -i "{mkv_path}" '
-            f'-filter_complex "%filter%" -map "[v]" -map "[a]" '
-            f'-preset ultrafast -crf 23 "{output_path}"',
-            shell=True, check=True, capture_output=True, text=True,
+            ["powershell", "-Command", ps_cmd],
+            check=True, capture_output=True, text=True,
         )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg error: {e.stderr[:1500]}")
+        raise RuntimeError(f"ffmpeg error: {e.stderr[:3000]}")
     finally:
         os.unlink(filter_path)
