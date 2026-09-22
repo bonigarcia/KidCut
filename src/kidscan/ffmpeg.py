@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from kidscan.models import CutScene, MkvTrack
@@ -70,14 +72,23 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
         raise RuntimeError("No clean segments remain.")
 
     select_expr = "+".join(select_terms)
-
-    subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-y", "-i", mkv_path,
-         "-filter_complex",
-         f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
-         f"aselect='{select_expr}',asetpts=N/SR/TB[a]",
-         "-map", "[v]", "-map", "[a]", "-map", "0:s?", "-c:s", "copy",
-         "-preset", "ultrafast", "-crf", "23",
-         output_path],
-        check=True,
+    filter_graph = (
+        f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
+        f"aselect='{select_expr}',asetpts=N/SR/TB[a]"
     )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        filter_path = f.name
+        f.write(filter_graph)
+
+    try:
+        subprocess.run(
+            ["ffmpeg", "-v", "quiet", "-y", "-i", mkv_path,
+             "-filter_complex_script", filter_path,
+             "-map", "[v]", "-map", "[a]", "-map", "0:s?", "-c:s", "copy",
+             "-preset", "ultrafast", "-crf", "23",
+             output_path],
+            check=True,
+        )
+    finally:
+        os.unlink(filter_path)
