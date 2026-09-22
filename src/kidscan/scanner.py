@@ -68,6 +68,18 @@ def build_request_completion(vendor_name: str, model: str, api_key: str | None =
             usage = payload.get("usage", {})
             return payload["choices"][0]["message"]["content"], usage.get("prompt_tokens"), usage.get("completion_tokens")
 
+        if vendor_name == "OpenRouter":
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "HTTP-Referer": "https://github.com/bonigarcia/kidcut"},
+                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                timeout=120,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            usage = payload.get("usage", {})
+            return payload["choices"][0]["message"]["content"], usage.get("prompt_tokens"), usage.get("completion_tokens")
+
         if vendor_name == "Anthropic":
             response = requests.post(
                 "https://api.anthropic.com/v1/messages",
