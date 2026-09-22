@@ -54,19 +54,7 @@ def _find_mkv_path(console: Console) -> str:
                 items.append(entry.name)
         if not items:
             raise RuntimeError(f"No MKV files or directories in {current}")
-
-        filter_prefix = choose_text(f"Filter ({current})", default="")
-        if filter_prefix is None:
-            raise KeyboardInterrupt
-        if filter_prefix:
-            filtered = [i for i in items if i.lower().startswith(filter_prefix.lower()) or i == "[..]"]
-        else:
-            filtered = items
-        if not filtered:
-            console.print(f"[yellow]No items matching '{filter_prefix}'.[/yellow]")
-            continue
-
-        selected = choose_from_options(f"MKV file ({current})", filtered, default=filtered[0])
+        selected = choose_from_options(f"MKV file ({current})", items, default=items[0])
         if selected is None:
             raise KeyboardInterrupt
         if selected == "[..]":
