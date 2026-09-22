@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import requests
 
-from kidscan.config import PROMPT_TEMPLATE_PATH
-from kidscan.models import CutScene, ScanRunSummary, SubtitleEntry
+from kidcut.config import PROMPT_TEMPLATE_PATH
+from kidcut.models import CutScene, ScanRunSummary, SubtitleEntry
 
 
 def build_review_prompt(subtitle_entries: list[SubtitleEntry]) -> str:

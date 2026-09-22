@@ -1,4 +1,4 @@
-from kidscan.models import CutScene
+from kidcut.models import CutScene
 
 
 def auto_edit(scenes: list[CutScene]) -> list[CutScene]:

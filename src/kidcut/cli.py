@@ -4,13 +4,13 @@ from pathlib import Path
 import questionary
 from rich.console import Console
 
-from kidscan.editor import auto_edit, manual_edit
-from kidscan.ffmpeg import check_binary, probe_tracks, extract_subtitles, cut_scenes
-from kidscan.models import CutScene
-from kidscan.scanner import build_request_completion, analyze_subtitles
-from kidscan.subtitle import parse_subtitles
-from kidscan.ui import run_with_spinner
-from kidscan.vendors import discover_vendors, list_models_for_vendor
+from kidcut.editor import auto_edit, manual_edit
+from kidcut.ffmpeg import check_binary, probe_tracks, extract_subtitles, cut_scenes
+from kidcut.models import CutScene
+from kidcut.scanner import build_request_completion, analyze_subtitles
+from kidcut.subtitle import parse_subtitles
+from kidcut.ui import run_with_spinner
+from kidcut.vendors import discover_vendors, list_models_for_vendor
 
 
 def choose_from_options(message: str, choices: list[str], default: str | None = None) -> str | None:

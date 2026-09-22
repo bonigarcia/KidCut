@@ -8,7 +8,7 @@ AI-powered CLI tool that detects and removes adult scenes from MKV movies, creat
 KidCut is a Python CLI tool run as:
 
 ```bash
-python -m kidscan
+python -m kidcut
 ```
 
 ### Interactive workflow

@@ -1,5 +1,5 @@
-from kidscan.editor import auto_edit, manual_edit
-from kidscan.models import CutScene
+from kidcut.editor import auto_edit, manual_edit
+from kidcut.models import CutScene
 
 
 def test_auto_edit_returns_all_scenes():

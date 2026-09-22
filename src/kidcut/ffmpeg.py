@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from kidscan.models import CutScene, MkvTrack
+from kidcut.models import CutScene, MkvTrack
 
 
 def check_binary() -> None:

@@ -1,4 +1,4 @@
-from kidscan.ui import run_with_spinner
+from kidcut.ui import run_with_spinner
 from rich.console import Console
 
 

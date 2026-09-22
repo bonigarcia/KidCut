@@ -1,6 +1,6 @@
 import subprocess
 
-from kidscan.ffmpeg import check_binary, get_timestamp_seconds
+from kidcut.ffmpeg import check_binary, get_timestamp_seconds
 
 
 def test_check_binary_passes_when_ffmpeg_found():

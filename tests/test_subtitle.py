@@ -1,4 +1,4 @@
-from kidscan.subtitle import parse_subtitles, parse_srt, parse_ass
+from kidcut.subtitle import parse_subtitles, parse_srt, parse_ass
 
 
 def test_parse_srt_returns_entries():

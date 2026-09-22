@@ -1,6 +1,6 @@
 import re
 
-from kidscan.models import SubtitleEntry
+from kidcut.models import SubtitleEntry
 
 
 def parse_srt(content: str) -> list[SubtitleEntry]:

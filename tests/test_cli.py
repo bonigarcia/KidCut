@@ -1,4 +1,4 @@
-from kidscan.cli import _get_output_path
+from kidcut.cli import _get_output_path
 
 
 def test_get_output_path_adds_kidcut_suffix():

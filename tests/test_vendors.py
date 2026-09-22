@@ -1,4 +1,4 @@
-from kidscan.vendors import discover_vendors, list_models_for_vendor
+from kidcut.vendors import discover_vendors, list_models_for_vendor
 
 
 def test_discover_vendors_includes_only_available_backends(monkeypatch):
@@ -6,7 +6,7 @@ def test_discover_vendors_includes_only_available_backends(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
     monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
-    monkeypatch.setattr("kidscan.vendors.ollama_is_available", lambda: True)
+    monkeypatch.setattr("kidcut.vendors.ollama_is_available", lambda: True)
 
     vendors = discover_vendors()
 
@@ -21,7 +21,7 @@ def test_list_models_for_vendor_reads_provider_api(monkeypatch):
         def json(self):
             return {"data": [{"id": "gpt-4o-mini"}, {"id": "gpt-4.1-mini"}]}
 
-    monkeypatch.setattr("kidscan.vendors.requests.get", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr("kidcut.vendors.requests.get", lambda *_args, **_kwargs: FakeResponse())
 
     models = list_models_for_vendor("OpenAI", api_key="openai-key")
 
@@ -42,7 +42,7 @@ def test_list_models_for_openrouter(monkeypatch):
         urls_called.append(url)
         return FakeResponse()
 
-    monkeypatch.setattr("kidscan.vendors.requests.get", fake_get)
+    monkeypatch.setattr("kidcut.vendors.requests.get", fake_get)
 
     models = list_models_for_vendor("OpenRouter", api_key="or-key")
 
@@ -50,8 +50,8 @@ def test_list_models_for_openrouter(monkeypatch):
     assert urls_called[0].startswith("https://openrouter.ai")
 
 
-from kidscan.models import SubtitleEntry, CutScene
-from kidscan.scanner import build_review_prompt, parse_review_response, analyze_subtitles
+from kidcut.models import SubtitleEntry, CutScene
+from kidcut.scanner import build_review_prompt, parse_review_response, analyze_subtitles
 
 
 def test_build_review_prompt_inserts_entries():
@@ -106,5 +106,5 @@ def test_analyze_subtitles_retries_invalid_json_once():
 
 
 def test_prompt_template_is_markdown_file():
-    from kidscan.config import PROMPT_TEMPLATE_PATH
+    from kidcut.config import PROMPT_TEMPLATE_PATH
     assert PROMPT_TEMPLATE_PATH.name == "review_prompt.md"
