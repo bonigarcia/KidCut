@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -45,7 +46,7 @@ def get_timestamp_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
-def format_timestamp(seconds: float) -> str:
+def _format_ts(seconds: float) -> str:
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = seconds % 60
@@ -73,6 +74,14 @@ def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[
     return segments
 
 
+def _extract_segment(mkv_path: str, start: float, end: float, output_path: str) -> None:
+    subprocess.run(
+        ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(start), "-i", mkv_path, "-to", _format_ts(end - start),
+         "-c", "copy", "-avoid_negative_ts", "1", output_path],
+        check=True,
+    )
+
+
 def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -> None:
     if not scenes_to_cut:
         Path(output_path).write_bytes(Path(mkv_path).read_bytes())
@@ -82,17 +91,20 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     if not segments:
         raise RuntimeError("No clean segments remain after cutting all scenes.")
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        concat_path = f.name
-        for seg_start, seg_end in segments:
-            f.write(f"file '{mkv_path}'\n")
-            f.write(f"inpoint {seg_start}\n")
-            f.write(f"outpoint {seg_end}\n")
-
+    tmpdir = Path(tempfile.mkdtemp())
     try:
+        concat_lines = []
+        for i, (seg_start, seg_end) in enumerate(segments):
+            seg_path = tmpdir / f"seg{i:04d}.mkv"
+            _extract_segment(mkv_path, seg_start, seg_end, str(seg_path))
+            concat_lines.append(f"file '{seg_path}'")
+
+        concat_path = tmpdir / "concat.txt"
+        concat_path.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
+
         subprocess.run(
-            ["ffmpeg", "-v", "quiet", "-y", "-f", "concat", "-safe", "0", "-i", concat_path, "-c", "copy", output_path],
+            ["ffmpeg", "-v", "quiet", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_path), "-c", "copy", output_path],
             check=True,
         )
     finally:
-        os.unlink(concat_path)
+        shutil.rmtree(tmpdir, ignore_errors=True)
