@@ -18,9 +18,9 @@ python -m kidscan
 2. **Track detection** — auto-detects subtitle track matching the default audio language (or lets you pick manually)
 3. **Subtitle extraction** — extracts and parses SRT/ASS text subtitles
 4. **Choose AI provider** — supports OpenAI, Anthropic, Google, OpenRouter, and Ollama (when running locally)
-5. **AI analysis** — model identifies complete scenes with inappropriate content
-6. **Edit mode** — choose **Automatic** (cut all flagged scenes) or **Manual** (review each scene one by one)
-7. **Output** — ffmpeg produces `input-kidcut.mkv` with flagged scenes removed (stream copy, no re-encode)
+5. **AI analysis** — model flags individual subtitle entries with inappropriate language
+6. **Edit mode** — choose **Automatic** (cut all flagged entries) or **Manual** (review each one by one)
+7. **Output** — ffmpeg re-encodes the video to produce `input-kidcut.mkv` with flagged frames removed (frame-accurate cuts)
 
 ### Requirements
 
