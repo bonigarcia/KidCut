@@ -75,8 +75,9 @@ def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[
 
 
 def _extract_segment(mkv_path: str, start: float, end: float, output_path: str) -> None:
+    duration = end - start
     subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(start), "-i", mkv_path, "-to", _format_ts(end - start),
+        ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(start), "-i", mkv_path, "-t", _format_ts(duration),
          "-c", "copy", "-avoid_negative_ts", "1", output_path],
         check=True,
     )
