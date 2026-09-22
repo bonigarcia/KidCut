@@ -1,7 +1,5 @@
 import json
-import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 from kidscan.models import CutScene, MkvTrack
@@ -79,20 +77,14 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
         f"aselect='{select_expr}',asetpts=N/SR/TB[a]"
     )
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        filter_path = f.name
-        f.write(filter_graph)
-
     try:
-        result = subprocess.run(
+        subprocess.run(
             ["ffmpeg", "-y", "-i", mkv_path,
-             "-filter_complex_script", filter_path,
+             "-filter_complex", filter_graph,
              "-map", "[v]", "-map", "[a]", "-map", "0:s?", "-c:s", "copy",
              "-preset", "ultrafast", "-crf", "23",
              output_path],
             capture_output=True, text=True, check=True,
         )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg stderr: {e.stderr[:2000]}")
-    finally:
-        os.unlink(filter_path)
+        raise RuntimeError(f"ffmpeg error: {e.stderr[:1500]}")
