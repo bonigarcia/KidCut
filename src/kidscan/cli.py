@@ -2,8 +2,6 @@ import os
 from pathlib import Path
 
 import questionary
-from prompt_toolkit.shortcuts import radiolist_dialog
-from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 
 from kidscan.editor import auto_edit, manual_edit
@@ -39,19 +37,10 @@ def confirm_cut(message: str, choices: list[str], default: str | None = None) ->
 def _find_mkv_path(console: Console) -> str:
     current = Path.home()
     while True:
-        items = [(i, i) for i in _list_dir_items(current)]
+        items = _list_dir_items(current)
         if not items:
             raise RuntimeError(f"No MKV files or directories in {current}")
-        try:
-            selected = radiolist_dialog(
-                title="MKV file",
-                text=HTML(f"<b>{current}</b>"),
-                values=items,
-                ok_text="Enter",
-                cancel_text="Cancel",
-            ).run()
-        except (KeyboardInterrupt, EOFError):
-            raise KeyboardInterrupt
+        selected = choose_from_options(f"MKV file ({current})", items, default=items[0])
         if selected is None:
             raise KeyboardInterrupt
         if selected == "[..]":
