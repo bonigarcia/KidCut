@@ -34,9 +34,9 @@ def probe_tracks(mkv_path: str) -> list[MkvTrack]:
 def extract_subtitles(mkv_path: str, track_index: int) -> str:
     result = subprocess.run(
         ["ffmpeg", "-v", "quiet", "-y", "-i", mkv_path, "-map", f"0:{track_index}", "-f", "srt", "-"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, check=True,
     )
-    return result.stdout
+    return result.stdout.decode("utf-8", errors="replace")
 
 
 def get_timestamp_seconds(ts: str) -> float:
