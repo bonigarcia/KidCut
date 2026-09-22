@@ -80,9 +80,8 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
             f"[0:a]atrim=start={seg_start:.3f}:end={seg_end:.3f},asetpts=PTS-STARTPTS[a{i}];"
         )
 
-    vid_links = "".join(f"[v{i}]" for i in range(len(segments)))
-    aud_links = "".join(f"[a{i}]" for i in range(len(segments)))
-    filter_parts.append(f"{vid_links}{aud_links}concat=n={len(segments)}:v=1:a=1[outv][outa]")
+    segment_links = "".join(f"[v{i}][a{i}]" for i in range(len(segments)))
+    filter_parts.append(f"{segment_links}concat=n={len(segments)}:v=1:a=1[outv][outa]")
     filter_graph = " ".join(filter_parts)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
