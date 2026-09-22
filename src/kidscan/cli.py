@@ -15,7 +15,7 @@ from kidscan.vendors import discover_vendors, list_models_for_vendor
 
 def choose_from_options(message: str, choices: list[str], default: str | None = None) -> str | None:
     try:
-        return questionary.select(message, choices=choices, default=default, use_shortcuts=True).ask()
+        return questionary.select(message, choices=choices, default=default).ask()
     except (KeyboardInterrupt, EOFError):
         return None
 
@@ -54,7 +54,19 @@ def _find_mkv_path(console: Console) -> str:
                 items.append(entry.name)
         if not items:
             raise RuntimeError(f"No MKV files or directories in {current}")
-        selected = choose_from_options(f"MKV file ({current})", items, default=items[0])
+
+        filter_prefix = choose_text(f"Filter ({current})", default="")
+        if filter_prefix is None:
+            raise KeyboardInterrupt
+        if filter_prefix:
+            filtered = [i for i in items if i.lower().startswith(filter_prefix.lower()) or i == "[..]"]
+        else:
+            filtered = items
+        if not filtered:
+            console.print(f"[yellow]No items matching '{filter_prefix}'.[/yellow]")
+            continue
+
+        selected = choose_from_options(f"MKV file ({current})", filtered, default=filtered[0])
         if selected is None:
             raise KeyboardInterrupt
         if selected == "[..]":
