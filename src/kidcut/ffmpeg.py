@@ -61,23 +61,29 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    select_terms = []
+    segments: list[tuple[float, float]] = []
     cursor = 0.0
     for start, end in cut_ranges:
         if start > cursor + MARGIN:
-            select_terms.append(f"between(t,{cursor:.1f},{start:.3f})")
+            segments.append((cursor, start))
         cursor = max(cursor, end)
     if duration - cursor > MARGIN:
-        select_terms.append(f"between(t,{cursor:.1f},{duration:.3f})")
+        segments.append((cursor, duration))
 
-    if not select_terms:
+    if not segments:
         raise RuntimeError("No clean segments remain.")
 
-    select_expr = "+".join(select_terms)
-    filter_graph = (
-        f"select='{select_expr}',setpts=PTS-STARTPTS[v];"
-        f"aselect='{select_expr}',asetpts=PTS-STARTPTS[a]"
-    )
+    filter_parts = []
+    for i, (seg_start, seg_end) in enumerate(segments):
+        filter_parts.append(
+            f"[0:v]trim=start={seg_start:.3f}:end={seg_end:.3f},setpts=PTS-STARTPTS[v{i}];"
+            f"[0:a]atrim=start={seg_start:.3f}:end={seg_end:.3f},asetpts=PTS-STARTPTS[a{i}];"
+        )
+
+    vid_links = "".join(f"[v{i}]" for i in range(len(segments)))
+    aud_links = "".join(f"[a{i}]" for i in range(len(segments)))
+    filter_parts.append(f"{vid_links}{aud_links}concat=n={len(segments)}:v=1:a=1[outv][outa]")
+    filter_graph = " ".join(filter_parts)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         filter_path = f.name
@@ -88,7 +94,7 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
             f'$f = Get-Content "{filter_path}" -Raw; '
             f'ffmpeg -y -i "{mkv_path}" '
             f'-filter_complex $f '
-            f'-map "[v]" -map "[a]" '
+            f'-map "[outv]" -map "[outa]" '
             f'-preset ultrafast -crf 23 "{output_path}"'
         )
         subprocess.run(
