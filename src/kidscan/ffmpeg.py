@@ -53,12 +53,10 @@ def _format_ts(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:06.3f}"
 
 
-def _find_keyframes_before(mkv_path: str, timestamp: float, window: float = 30.0) -> list[float]:
-    start = max(0, timestamp - window)
+def _probe_all_keyframes(mkv_path: str) -> list[float]:
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-select_streams", "v", "-show_frames",
          "-show_entries", "frame=pkt_pts_time,pict_type",
-         "-read_intervals", f"{_format_ts(start)}%+{window}",
          "-of", "csv=p=0", mkv_path],
         capture_output=True, text=True, check=True,
     )
@@ -67,40 +65,25 @@ def _find_keyframes_before(mkv_path: str, timestamp: float, window: float = 30.0
         parts = line.split(",")
         if len(parts) >= 2 and parts[1] == "I":
             try:
-                pts = float(parts[0])
-                if pts < timestamp - 0.01:
-                    keyframes.append(pts)
+                keyframes.append(float(parts[0]))
             except ValueError:
                 continue
     return keyframes
 
 
-def _find_keyframes_after(mkv_path: str, timestamp: float, window: float = 30.0) -> list[float]:
-    result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-select_streams", "v", "-show_frames",
-         "-show_entries", "frame=pkt_pts_time,pict_type",
-         "-read_intervals", f"{_format_ts(timestamp)}%+{window}",
-         "-of", "csv=p=0", mkv_path],
-        capture_output=True, text=True, check=True,
-    )
-    keyframes = []
-    for line in result.stdout.strip().splitlines():
-        parts = line.split(",")
-        if len(parts) >= 2 and parts[1] == "I":
-            try:
-                pts = float(parts[0])
-                if pts > timestamp + 0.01:
-                    keyframes.append(pts)
-            except ValueError:
-                continue
-    return keyframes
+def _find_keyframes_before(keyframes: list[float], timestamp: float) -> list[float]:
+    return [k for k in keyframes if k < timestamp - 0.01]
 
 
-def _snap_to_keyframes(mkv_path: str, cut_ranges: list[tuple[float, float]], duration: float) -> list[tuple[float, float]]:
+def _find_keyframes_after(keyframes: list[float], timestamp: float) -> list[float]:
+    return [k for k in keyframes if k > timestamp + 0.01]
+
+
+def _snap_to_keyframes(keyframes: list[float], cut_ranges: list[tuple[float, float]], duration: float) -> list[tuple[float, float]]:
     segments: list[tuple[float, float]] = []
     cursor = 0.0
     for start, end in cut_ranges:
-        kfs_before = _find_keyframes_before(mkv_path, start)
+        kfs_before = _find_keyframes_before(keyframes, start)
         if len(kfs_before) >= 2:
             segment_end = kfs_before[-2]  # ponytail: use 2nd-to-last keyframe; -t with -c copy snaps to next keyframe
         elif len(kfs_before) == 1:
@@ -109,12 +92,12 @@ def _snap_to_keyframes(mkv_path: str, cut_ranges: list[tuple[float, float]], dur
             segment_end = max(0, start - 2.0)
         if segment_end > cursor + 0.5:
             segments.append((cursor, segment_end))
-        kfs_after = _find_keyframes_after(mkv_path, end)
+        kfs_after = _find_keyframes_after(keyframes, end)
         if kfs_after:
             cursor = kfs_after[0]
         elif kfs_before:
             cursor = kfs_before[-1] + 1.0
-            kfs_after2 = _find_keyframes_after(mkv_path, cursor, window=30.0)
+            kfs_after2 = _find_keyframes_after(keyframes, cursor)
             cursor = kfs_after2[0] if kfs_after2 else min(duration, cursor)
         else:
             cursor = min(duration, end + 2.0)
@@ -133,7 +116,8 @@ def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    return _snap_to_keyframes(mkv_path, cut_ranges, duration)
+    keyframes = _probe_all_keyframes(mkv_path)
+    return _snap_to_keyframes(keyframes, cut_ranges, duration)
 
 
 def _extract_segment(mkv_path: str, start: float, end: float, output_path: str) -> None:
