@@ -1,17 +1,20 @@
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from kidcut.models import CutScene, MkvTrack
 
+MARGIN = 2.0
+
 
 def check_binary() -> None:
     try:
         subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
-        raise RuntimeError("ffmpeg not found. Install ffmpeg and ensure it is in your PATH.")
+        raise RuntimeError("ffmpeg not found.")
 
 
 def probe_tracks(mkv_path: str) -> list[MkvTrack]:
@@ -45,12 +48,17 @@ def get_timestamp_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
+def _format_ts(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:06.3f}"
+
+
 def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -> None:
     if not scenes_to_cut:
         Path(output_path).write_bytes(Path(mkv_path).read_bytes())
         return
-
-    MARGIN = 0.2
 
     probe = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", mkv_path],
@@ -61,46 +69,44 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    segments: list[tuple[float, float]] = []
-    cursor = 0.0
-    for start, end in cut_ranges:
-        if start > cursor + MARGIN:
-            segments.append((cursor, start))
-        cursor = max(cursor, end)
-    if duration - cursor > MARGIN:
-        segments.append((cursor, duration))
-
-    if not segments:
-        raise RuntimeError("No clean segments remain.")
-
-    filter_parts = []
-    for i, (seg_start, seg_end) in enumerate(segments):
-        filter_parts.append(
-            f"[0:v]trim=start={seg_start:.3f}:end={seg_end:.3f},setpts=PTS-STARTPTS[v{i}];"
-            f"[0:a]atrim=start={seg_start:.3f}:end={seg_end:.3f},asetpts=PTS-STARTPTS[a{i}];"
-        )
-
-    segment_links = "".join(f"[v{i}][a{i}]" for i in range(len(segments)))
-    filter_parts.append(f"{segment_links}concat=n={len(segments)}:v=1:a=1[outv][outa]")
-    filter_graph = " ".join(filter_parts)
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        filter_path = f.name
-        f.write(filter_graph)
-
+    tmpdir = Path(tempfile.mkdtemp())
     try:
-        ps_cmd = (
-            f'$f = Get-Content "{filter_path}" -Raw; '
-            f'ffmpeg -y -i "{mkv_path}" '
-            f'-filter_complex $f '
-            f'-map "[outv]" -map "[outa]" '
-            f'-preset ultrafast -crf 23 "{output_path}"'
-        )
+        concat_lines = []
+        cursor = 0.0
+        for start, end in cut_ranges:
+            clip_end = max(0.0, start - MARGIN)
+            if clip_end > cursor + 0.5:
+                seg_path = tmpdir / f"seg{len(concat_lines):04d}.mkv"
+                dur = clip_end - cursor
+                subprocess.run(
+                    ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(cursor), "-i", mkv_path,
+                     "-t", _format_ts(dur), "-c", "copy", "-avoid_negative_ts", "1", str(seg_path)],
+                    check=True,
+                )
+                concat_lines.append(f"file '{seg_path}'")
+            cursor = min(duration, end + MARGIN)
+        if duration - cursor > 0.5:
+            seg_path = tmpdir / f"seg{len(concat_lines):04d}.mkv"
+            dur = duration - cursor
+            subprocess.run(
+                ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(cursor), "-i", mkv_path,
+                 "-t", _format_ts(dur), "-c", "copy", "-avoid_negative_ts", "1", str(seg_path)],
+                check=True,
+            )
+            concat_lines.append(f"file '{seg_path}'")
+
+        if len(concat_lines) < 2:
+            if concat_lines:
+                shutil.copy(next(tmpdir.iterdir()), output_path)
+            return
+
+        concat_path = tmpdir / "concat.txt"
+        concat_path.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
+
         subprocess.run(
-            ["powershell", "-Command", ps_cmd],
-            check=True, capture_output=True, text=True,
+            ["ffmpeg", "-v", "quiet", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_path),
+             "-c", "copy", output_path],
+            check=True,
         )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg error: {e.stderr[:3000]}")
     finally:
-        os.unlink(filter_path)
+        shutil.rmtree(tmpdir, ignore_errors=True)
