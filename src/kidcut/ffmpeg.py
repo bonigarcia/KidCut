@@ -49,8 +49,15 @@ def _run_filter(mkv_path: str, filter_graph: str, extra_args: str, output_path: 
         fp = f.name
         f.write(filter_graph)
     try:
-        ps = f'$f = Get-Content "{fp}" -Raw; ffmpeg -y -i "{mkv_path}" -filter_complex $f {extra_args} "{output_path}"'
-        subprocess.run(["powershell", "-Command", ps], check=True, capture_output=True, text=True)
+        if os.name == "nt":
+            ps = f'$f = Get-Content "{fp}" -Raw; ffmpeg -y -i "{mkv_path}" -filter_complex $f {extra_args} "{output_path}"'
+            subprocess.run(["powershell", "-Command", ps], check=True, capture_output=True, text=True)
+        else:
+            with open(fp) as f:
+                filter_str = f.read()
+            cmd = (["ffmpeg", "-y", "-i", mkv_path, "-filter_complex", filter_str]
+                   + extra_args.split() + [output_path])
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg error: {e.stderr[:2000]}")
     finally:
@@ -109,5 +116,5 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, m
     filter_graph = " ".join(filter_parts)
 
     _run_filter(mkv_path, filter_graph,
-        "-map '[outv]' -map '[outa]' -c:v libx264 -preset ultrafast -crf 23 -c:a aac -b:a 640k",
+        "-map [outv] -map [outa] -c:v libx264 -preset ultrafast -crf 23 -c:a aac -b:a 640k",
         output_path)
