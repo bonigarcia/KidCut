@@ -178,6 +178,9 @@ def main(argv: list[str] | None = None) -> int:
         edit_mode = _choose_edit_mode(console)
         if edit_mode.startswith("Automatic"):
             to_cut = auto_edit(scenes)
+            console.print(f"Scenes to cut ({len(to_cut)}):")
+            for scene in to_cut:
+                console.print(f"  [{scene.start} \u2192 {scene.end}] {scene.reason}")
         else:
             to_cut = manual_edit(scenes, confirm_cut)
 

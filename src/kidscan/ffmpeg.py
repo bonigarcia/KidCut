@@ -1,10 +1,14 @@
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from kidscan.models import CutScene, MkvTrack
+
+
+MARGIN = 2.0
 
 
 def check_binary() -> None:
@@ -45,6 +49,22 @@ def get_timestamp_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
+def _format_ts(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:06.3f}"
+
+
+def _extract_segment(mkv_path: str, start: float, end: float, output_path: str) -> None:
+    duration = end - start
+    subprocess.run(
+        ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(start), "-i", mkv_path,
+         "-t", _format_ts(duration), "-c", "copy", "-avoid_negative_ts", "1", output_path],
+        check=True,
+    )
+
+
 def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -> None:
     if not scenes_to_cut:
         Path(output_path).write_bytes(Path(mkv_path).read_bytes())
@@ -62,39 +82,30 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     segments: list[tuple[float, float]] = []
     cursor = 0.0
     for start, end in cut_ranges:
-        if start > cursor + 0.5:
-            segments.append((cursor, start))
-        cursor = max(cursor, end)
+        safe_end = max(0.0, start - MARGIN)
+        if safe_end > cursor + 0.5:
+            segments.append((cursor, safe_end))
+        cursor = min(duration, end + MARGIN)
     if duration - cursor > 0.5:
         segments.append((cursor, duration))
 
     if not segments:
         raise RuntimeError("No clean segments remain.")
 
-    filter_parts = []
-    for i, (seg_start, seg_end) in enumerate(segments):
-        filter_parts.append(
-            f"[0:v]trim=start={seg_start}:end={seg_end},setpts=PTS-STARTPTS[v{i}];"
-            f"[0:a]atrim=start={seg_start}:end={seg_end},asetpts=PTS-STARTPTS[a{i}];"
-        )
-
-    vid_links = "".join(f"[v{i}]" for i in range(len(segments)))
-    aud_links = "".join(f"[a{i}]" for i in range(len(segments)))
-    filter_parts.append(f"{vid_links}{aud_links}concat=n={len(segments)}:v=1:a=1[outv][outa]")
-    filter_graph = " ".join(filter_parts)
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        filter_path = f.name
-        f.write(filter_graph)
-
+    tmpdir = Path(tempfile.mkdtemp())
     try:
+        concat_lines = []
+        for i, (seg_start, seg_end) in enumerate(segments):
+            seg_path = tmpdir / f"seg{i:04d}.mkv"
+            _extract_segment(mkv_path, seg_start, seg_end, str(seg_path))
+            concat_lines.append(f"file '{seg_path}'")
+
+        concat_path = tmpdir / "concat.txt"
+        concat_path.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
+
         subprocess.run(
-            ["ffmpeg", "-v", "quiet", "-y", "-i", mkv_path,
-             "-filter_complex_script", filter_path,
-             "-map", "[outv]", "-map", "[outa]", "-map", "0:s?", "-c:s", "copy",
-             "-preset", "ultrafast", "-crf", "23",
-             output_path],
+            ["ffmpeg", "-v", "quiet", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_path), "-c", "copy", output_path],
             check=True,
         )
     finally:
-        os.unlink(filter_path)
+        shutil.rmtree(tmpdir, ignore_errors=True)
