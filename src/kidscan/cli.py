@@ -35,12 +35,35 @@ def confirm_cut(message: str, choices: list[str], default: str | None = None) ->
 
 
 def _find_mkv_path(console: Console) -> str:
-    path = choose_text("MKV file path", default="")
-    if path is None:
-        raise KeyboardInterrupt
-    if not os.path.isfile(path) or not path.lower().endswith(".mkv"):
-        raise RuntimeError("File not found or not an MKV file.")
-    return path
+    current = Path.cwd()
+    while True:
+        items = []
+        try:
+            entries = sorted(current.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        except PermissionError:
+            current = current.parent
+            continue
+        if current.parent != current:
+            items.append("[..]")
+        for entry in entries:
+            if entry.is_dir():
+                items.append(f"[{entry.name}]")
+            elif entry.suffix.lower() == ".mkv":
+                items.append(entry.name)
+        if not items:
+            raise RuntimeError(f"No MKV files or directories in {current}")
+        selected = choose_from_options(f"MKV file ({current})", items, default=items[0])
+        if selected is None:
+            raise KeyboardInterrupt
+        if selected == "[..]":
+            current = current.parent
+        elif selected.startswith("[") and selected.endswith("]"):
+            current = current / selected[1:-1]
+        else:
+            path = str(current / selected)
+            if not os.path.isfile(path):
+                raise RuntimeError("Selected file not found.")
+            return path
 
 
 def _auto_select_subtitle_track(tracks, default_audio_lang: str) -> int | None:
