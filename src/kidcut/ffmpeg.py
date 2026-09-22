@@ -44,11 +44,17 @@ def get_timestamp_seconds(ts: str) -> float:
     return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
 
 
-def _fmt(seconds: float) -> str:
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}"
+def _run_filter(mkv_path: str, filter_graph: str, extra_args: str, output_path: str) -> None:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        fp = f.name
+        f.write(filter_graph)
+    try:
+        ps = f'$f = Get-Content "{fp}" -Raw; ffmpeg -y -i "{mkv_path}" -filter_complex $f {extra_args} "{output_path}"'
+        subprocess.run(["powershell", "-Command", ps], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffmpeg error: {e.stderr[:2000]}")
+    finally:
+        os.unlink(fp)
 
 
 def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, margin: float = 0.0) -> None:
@@ -65,59 +71,42 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, m
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    filter_parts = []
+    select_terms = []
     cursor = 0.0
-    idx = 0
     for start, end in cut_ranges:
-        clip_end = max(0.0, start - margin)
-        if clip_end > cursor + 0.1:
-            filter_parts.append(
-                f"[0:v]trim=start={cursor:.3f}:end={clip_end:.3f},setpts=N/FRAME_RATE/TB[v{idx}];"
-                f"[0:a]atrim=start={cursor:.3f}:end={clip_end:.3f},asetpts=PTS-STARTPTS[a{idx}];"
-            )
-            idx += 1
+        if start > cursor + margin + 0.05:
+            select_terms.append(f"between(t,{cursor},{start - margin})")
         cursor = max(cursor, end + margin)
-    if duration - cursor > 0.1:
-        filter_parts.append(
-            f"[0:v]trim=start={cursor:.3f}:end={duration:.3f},setpts=N/FRAME_RATE/TB[v{idx}];"
-            f"[0:a]atrim=start={cursor:.3f}:end={duration:.3f},asetpts=PTS-STARTPTS[a{idx}];"
-        )
-        idx += 1
+    if duration - cursor > 0.05:
+        select_terms.append(f"between(t,{cursor},{duration})")
 
-    if idx == 0:
+    if not select_terms:
         return
-    if idx == 1:
+
+    select_expr = "+".join(select_terms)
+
+    tmpdir = Path(tempfile.mkdtemp())
+    try:
+        vid_path = tmpdir / "video.mkv"
+        aud_path = tmpdir / "audio.mka"
+
+        _run_filter(mkv_path,
+            f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v]",
+            "-map '[v]' -an -c:v libx264 -preset ultrafast -crf 23",
+            str(vid_path))
+
+        _run_filter(mkv_path,
+            f"aselect='{select_expr}',asetpts=N/SR/TB[a]",
+            "-map '[a]' -vn -c:a aac -b:a 640k",
+            str(aud_path))
+
         subprocess.run(
-            ["ffmpeg", "-y", "-i", mkv_path,
-             "-vf", f"trim=start={cursor:.3f}:end={duration:.3f},setpts=PTS-STARTPTS",
-             "-af", f"atrim=start={cursor:.3f}:end={duration:.3f},asetpts=PTS-STARTPTS",
-             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-             "-c:a", "aac", output_path],
+            ["ffmpeg", "-y", "-i", str(vid_path), "-i", str(aud_path),
+             "-c:v", "copy", "-c:a", "copy", output_path],
             check=True, capture_output=True, text=True,
         )
-        return
-
-    segment_links = "".join(f"[v{i}][a{i}]" for i in range(idx))
-    filter_parts.append(f"{segment_links}concat=n={idx}:v=1:a=1[outv][outa]")
-    filter_graph = " ".join(filter_parts)
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        filter_path = f.name
-        f.write(filter_graph)
-
-    try:
-        ps_cmd = (
-            f'$f = Get-Content "{filter_path}" -Raw; '
-            f'ffmpeg -y -i "{mkv_path}" '
-            f'-filter_complex $f '
-            f'-map "[outv]" -map "[outa]" '
-            f'-c:v libx264 -preset ultrafast -crf 23 '
-            f'-c:a aac '
-            f'-b:a 640k '
-            f'"{output_path}"'
-        )
-        subprocess.run(["powershell", "-Command", ps_cmd], check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg error: {e.stderr[:2000]}")
     finally:
-        os.unlink(filter_path)
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
