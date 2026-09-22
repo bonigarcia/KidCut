@@ -55,4 +55,4 @@ src/kidscan/
 
 ## About
 
-KidCut is an open-source project, licensed under Apache 2.0.
+KidCut (Copyright &copy; 2026) is an open-source project created and maintained by [Boni Garcia](https://bonigarcia.dev/), licensed under the terms of [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0).
