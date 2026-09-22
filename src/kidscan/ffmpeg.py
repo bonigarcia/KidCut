@@ -53,10 +53,7 @@ def _format_ts(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:06.3f}"
 
 
-SAFETY_MARGIN = 1.0
-
-
-def _find_keyframes_before(mkv_path: str, timestamp: float, window: float = 10.0) -> list[float]:
+def _find_keyframes_before(mkv_path: str, timestamp: float, window: float = 30.0) -> list[float]:
     start = max(0, timestamp - window)
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-select_streams", "v", "-show_frames",
@@ -78,7 +75,7 @@ def _find_keyframes_before(mkv_path: str, timestamp: float, window: float = 10.0
     return keyframes
 
 
-def _find_keyframes_after(mkv_path: str, timestamp: float, window: float = 10.0) -> list[float]:
+def _find_keyframes_after(mkv_path: str, timestamp: float, window: float = 30.0) -> list[float]:
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-select_streams", "v", "-show_frames",
          "-show_entries", "frame=pkt_pts_time,pict_type",
@@ -104,11 +101,23 @@ def _snap_to_keyframes(mkv_path: str, cut_ranges: list[tuple[float, float]], dur
     cursor = 0.0
     for start, end in cut_ranges:
         kfs_before = _find_keyframes_before(mkv_path, start)
-        safe_end = kfs_before[-1] if kfs_before else max(0, start - 1.0)
-        if safe_end > cursor + 0.5:
-            segments.append((cursor, safe_end))
+        if len(kfs_before) >= 2:
+            segment_end = kfs_before[-2]  # ponytail: use 2nd-to-last keyframe; -t with -c copy snaps to next keyframe
+        elif len(kfs_before) == 1:
+            segment_end = max(0, kfs_before[0] - 2.0)
+        else:
+            segment_end = max(0, start - 2.0)
+        if segment_end > cursor + 0.5:
+            segments.append((cursor, segment_end))
         kfs_after = _find_keyframes_after(mkv_path, end)
-        cursor = kfs_after[0] if kfs_after else min(duration, end + 1.0)
+        if kfs_after:
+            cursor = kfs_after[0]
+        elif kfs_before:
+            cursor = kfs_before[-1] + 1.0
+            kfs_after2 = _find_keyframes_after(mkv_path, cursor, window=30.0)
+            cursor = kfs_after2[0] if kfs_after2 else min(duration, cursor)
+        else:
+            cursor = min(duration, end + 2.0)
     if duration - cursor > 0.5:
         segments.append((cursor, duration))
     return segments
