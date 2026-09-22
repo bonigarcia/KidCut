@@ -189,10 +189,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         output_path = _get_output_path(mkv_path)
-        margin_text = choose_text("Safety margin (seconds around each cut)", default="5.0")
+        margin_text = choose_text("Safety margin (seconds around each cut)", default="0.0")
         if margin_text is None:
             raise KeyboardInterrupt
-        margin = float(margin_text) if margin_text else 5.0
+        margin = float(margin_text) if margin_text else 0.0
         console.print(f"Cutting [bold]{len(to_cut)}[/bold] scene(s) with [bold]{margin}s[/bold] margin...")
         cut_scenes(mkv_path, to_cut, output_path, margin=margin)
         console.print(f"[green]Done![/green] Output saved to [bold]{output_path}[/bold]")

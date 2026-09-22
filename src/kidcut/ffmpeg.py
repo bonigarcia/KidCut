@@ -45,7 +45,7 @@ def get_timestamp_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
-def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, margin: float = 5.0) -> None:
+def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, margin: float = 0.0) -> None:
     if not scenes_to_cut:
         Path(output_path).write_bytes(Path(mkv_path).read_bytes())
         return
