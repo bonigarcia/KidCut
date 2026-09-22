@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from kidscan.models import CutScene, MkvTrack
@@ -63,10 +65,10 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     cursor = 0.0
     for start, end in cut_ranges:
         if start > cursor + MARGIN:
-            select_terms.append(f"between(t,{cursor},{start})")
+            select_terms.append(f"between(t,{cursor:.1f},{start:.3f})")
         cursor = max(cursor, end)
     if duration - cursor > MARGIN:
-        select_terms.append(f"between(t,{cursor},{duration})")
+        select_terms.append(f"between(t,{cursor:.1f},{duration:.3f})")
 
     if not select_terms:
         raise RuntimeError("No clean segments remain.")
@@ -77,14 +79,18 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
         f"aselect='{select_expr}',asetpts=PTS-STARTPTS[a]"
     )
 
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        filter_path = f.name
+        f.write(filter_graph)
+
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", mkv_path,
-             "-filter_complex", filter_graph,
-             "-map", "[v]", "-map", "[a]",
-             "-preset", "ultrafast", "-crf", "23",
-             output_path],
-            capture_output=True, text=True, check=True,
+            f'set /p filter=<"{filter_path}" && ffmpeg -y -i "{mkv_path}" '
+            f'-filter_complex "%filter%" -map "[v]" -map "[a]" '
+            f'-preset ultrafast -crf 23 "{output_path}"',
+            shell=True, check=True, capture_output=True, text=True,
         )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg error: {e.stderr[:1500]}")
+    finally:
+        os.unlink(filter_path)
