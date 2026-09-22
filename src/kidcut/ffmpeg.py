@@ -45,7 +45,7 @@ def get_timestamp_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
-def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -> None:
+def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, margin: float = 5.0) -> None:
     if not scenes_to_cut:
         Path(output_path).write_bytes(Path(mkv_path).read_bytes())
         return
@@ -64,10 +64,10 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
     segments: list[tuple[float, float]] = []
     cursor = 0.0
     for start, end in cut_ranges:
-        clip_end = max(0.0, start - MARGIN)
+        clip_end = max(0.0, start - margin)
         if clip_end > cursor + 0.5:
             segments.append((cursor, clip_end))
-        cursor = min(duration, end + MARGIN)
+        cursor = min(duration, end + margin)
     if duration - cursor > 0.5:
         segments.append((cursor, duration))
 
