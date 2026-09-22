@@ -71,42 +71,43 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, m
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    select_terms = []
+    filter_parts = []
     cursor = 0.0
+    idx = 0
     for start, end in cut_ranges:
-        if start > cursor + margin + 0.05:
-            select_terms.append(f"between(t,{cursor},{start - margin})")
+        clip_end = max(0.0, start - margin)
+        if clip_end > cursor + 0.1:
+            filter_parts.append(
+                f"[0:v]trim=start={cursor:.3f}:end={clip_end:.3f},setpts=N/FRAME_RATE/TB[v{idx}];"
+                f"[0:a]atrim=start={cursor:.3f}:end={clip_end:.3f},asetpts=PTS-STARTPTS[a{idx}];"
+            )
+            idx += 1
         cursor = max(cursor, end + margin)
-    if duration - cursor > 0.05:
-        select_terms.append(f"between(t,{cursor},{duration})")
+    if duration - cursor > 0.1:
+        filter_parts.append(
+            f"[0:v]trim=start={cursor:.3f}:end={duration:.3f},setpts=N/FRAME_RATE/TB[v{idx}];"
+            f"[0:a]atrim=start={cursor:.3f}:end={duration:.3f},asetpts=PTS-STARTPTS[a{idx}];"
+        )
+        idx += 1
 
-    if not select_terms:
+    if idx == 0:
         return
-
-    select_expr = "+".join(select_terms)
-
-    tmpdir = Path(tempfile.mkdtemp())
-    try:
-        vid_path = tmpdir / "video.mkv"
-        aud_path = tmpdir / "audio.mka"
-
-        _run_filter(mkv_path,
-            f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v]",
-            "-map '[v]' -an -c:v libx264 -preset ultrafast -crf 23",
-            str(vid_path))
-
-        _run_filter(mkv_path,
-            f"aselect='{select_expr}',asetpts=N/SR/TB[a]",
-            "-map '[a]' -vn -c:a aac -b:a 640k",
-            str(aud_path))
-
+    if idx == 1:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", str(vid_path), "-i", str(aud_path),
-             "-c:v", "copy", "-c:a", "copy", output_path],
+            ["ffmpeg", "-y", "-i", mkv_path,
+             "-vf", f"trim=start={cursor:.3f}:end={duration:.3f},setpts=PTS-STARTPTS",
+             "-af", f"atrim=start={cursor:.3f}:end={duration:.3f},asetpts=PTS-STARTPTS",
+             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+             "-c:a", "aac", "-b:a", "640k",
+             output_path],
             check=True, capture_output=True, text=True,
         )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg error: {e.stderr[:2000]}")
-    finally:
-        import shutil
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        return
+
+    segment_links = "".join(f"[v{i}][a{i}]" for i in range(idx))
+    filter_parts.append(f"{segment_links}concat=n={idx}:v=1:a=1[outv][outa]")
+    filter_graph = " ".join(filter_parts)
+
+    _run_filter(mkv_path, filter_graph,
+        "-map '[outv]' -map '[outa]' -c:v libx264 -preset ultrafast -crf 23 -c:a aac -b:a 640k",
+        output_path)
