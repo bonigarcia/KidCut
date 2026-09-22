@@ -73,15 +73,15 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -
 
     select_expr = "+".join(select_terms)
     filter_graph = (
-        f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
-        f"aselect='{select_expr}',asetpts=N/SR/TB[a]"
+        f"select='{select_expr}',setpts=PTS-STARTPTS[v];"
+        f"aselect='{select_expr}',asetpts=PTS-STARTPTS[a]"
     )
 
     try:
         subprocess.run(
             ["ffmpeg", "-y", "-i", mkv_path,
              "-filter_complex", filter_graph,
-             "-map", "[v]", "-map", "[a]", "-map", "0:s?", "-c:s", "copy",
+             "-map", "[v]", "-map", "[a]",
              "-preset", "ultrafast", "-crf", "23",
              output_path],
             capture_output=True, text=True, check=True,
