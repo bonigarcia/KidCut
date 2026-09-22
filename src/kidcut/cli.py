@@ -1,4 +1,3 @@
-import argparse
 import os
 from pathlib import Path
 
@@ -137,10 +136,6 @@ def _get_output_path(mkv_path: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="kidcut", description="AI-powered movie editor for families")
-    parser.add_argument("-m", "--margin", type=float, default=5.0, help="seconds to remove around each cut (default: 5.0)")
-    args = parser.parse_args(argv)
-
     console = Console()
     try:
         console.print("[bold]KidCut[/bold] \u2014 AI-powered movie editor for families")
@@ -194,8 +189,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         output_path = _get_output_path(mkv_path)
-        console.print(f"Cutting [bold]{len(to_cut)}[/bold] scene(s)...")
-        cut_scenes(mkv_path, to_cut, output_path, margin=args.margin)
+        margin_text = choose_text("Safety margin (seconds around each cut)", default="5.0")
+        if margin_text is None:
+            raise KeyboardInterrupt
+        margin = float(margin_text) if margin_text else 5.0
+        console.print(f"Cutting [bold]{len(to_cut)}[/bold] scene(s) with [bold]{margin}s[/bold] margin...")
+        cut_scenes(mkv_path, to_cut, output_path, margin=margin)
         console.print(f"[green]Done![/green] Output saved to [bold]{output_path}[/bold]")
         return 0
     except KeyboardInterrupt:
