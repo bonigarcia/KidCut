@@ -1,7 +1,6 @@
-import json
 import subprocess
 
-from kidscan.ffmpeg import check_binary, get_timestamp_seconds, _format_ts
+from kidscan.ffmpeg import check_binary, get_timestamp_seconds
 
 
 def test_check_binary_passes_when_ffmpeg_found():
@@ -17,11 +16,3 @@ def test_check_binary_raises_when_ffmpeg_missing(monkeypatch):
 
 def test_get_timestamp_seconds():
     assert get_timestamp_seconds("00:01:30,500") == 90.5
-
-
-def test_format_timestamp():
-    assert _format_ts(90.5) == "00:01:30.500"
-
-
-def test_format_timestamp_hours():
-    assert _format_ts(3661.0) == "01:01:01.000"

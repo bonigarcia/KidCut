@@ -1,8 +1,5 @@
 import json
-import os
-import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 from kidscan.models import CutScene, MkvTrack
@@ -46,67 +43,11 @@ def get_timestamp_seconds(ts: str) -> float:
     return h * 3600 + m * 60 + s
 
 
-def _format_ts(seconds: float) -> str:
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}"
+def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -> None:
+    if not scenes_to_cut:
+        Path(output_path).write_bytes(Path(mkv_path).read_bytes())
+        return
 
-
-def _probe_all_keyframes(mkv_path: str) -> list[float]:
-    result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-select_streams", "v", "-show_frames",
-         "-show_entries", "frame=pkt_pts_time,pict_type",
-         "-of", "csv=p=0", mkv_path],
-        capture_output=True, text=True, check=True,
-    )
-    keyframes = []
-    for line in result.stdout.strip().splitlines():
-        parts = line.split(",")
-        if len(parts) >= 2 and parts[1] == "I":
-            try:
-                keyframes.append(float(parts[0]))
-            except ValueError:
-                continue
-    return keyframes
-
-
-def _find_keyframes_before(keyframes: list[float], timestamp: float) -> list[float]:
-    return [k for k in keyframes if k < timestamp - 0.01]
-
-
-def _find_keyframes_after(keyframes: list[float], timestamp: float) -> list[float]:
-    return [k for k in keyframes if k > timestamp + 0.01]
-
-
-def _snap_to_keyframes(keyframes: list[float], cut_ranges: list[tuple[float, float]], duration: float) -> list[tuple[float, float]]:
-    segments: list[tuple[float, float]] = []
-    cursor = 0.0
-    for start, end in cut_ranges:
-        kfs_before = _find_keyframes_before(keyframes, start)
-        if len(kfs_before) >= 2:
-            segment_end = kfs_before[-2]  # ponytail: use 2nd-to-last keyframe; -t with -c copy snaps to next keyframe
-        elif len(kfs_before) == 1:
-            segment_end = max(0, kfs_before[0] - 2.0)
-        else:
-            segment_end = max(0, start - 2.0)
-        if segment_end > cursor + 0.5:
-            segments.append((cursor, segment_end))
-        kfs_after = _find_keyframes_after(keyframes, end)
-        if kfs_after:
-            cursor = kfs_after[0]
-        elif kfs_before:
-            cursor = kfs_before[-1] + 1.0
-            kfs_after2 = _find_keyframes_after(keyframes, cursor)
-            cursor = kfs_after2[0] if kfs_after2 else min(duration, cursor)
-        else:
-            cursor = min(duration, end + 2.0)
-    if duration - cursor > 0.5:
-        segments.append((cursor, duration))
-    return segments
-
-
-def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[float, float]]:
     probe = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", mkv_path],
         capture_output=True, text=True, check=True,
@@ -116,42 +57,27 @@ def _build_segments(mkv_path: str, scenes_to_cut: list[CutScene]) -> list[tuple[
     cut_ranges = [(get_timestamp_seconds(s.start), get_timestamp_seconds(s.end)) for s in scenes_to_cut]
     cut_ranges.sort()
 
-    keyframes = _probe_all_keyframes(mkv_path)
-    return _snap_to_keyframes(keyframes, cut_ranges, duration)
+    select_terms = []
+    cursor = 0.0
+    for start, end in cut_ranges:
+        if start > cursor + 0.5:
+            select_terms.append(f"between(t,{cursor},{start})")
+        cursor = max(cursor, end)
+    if duration - cursor > 0.5:
+        select_terms.append(f"between(t,{cursor},{duration})")
 
+    if not select_terms:
+        raise RuntimeError("No clean segments remain.")
 
-def _extract_segment(mkv_path: str, start: float, end: float, output_path: str) -> None:
-    duration = end - start
+    select_expr = "+".join(select_terms)
+
     subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-y", "-ss", _format_ts(start), "-i", mkv_path, "-t", _format_ts(duration),
-         "-c", "copy", "-avoid_negative_ts", "1", output_path],
+        ["ffmpeg", "-v", "quiet", "-y", "-i", mkv_path,
+         "-filter_complex",
+         f"select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
+         f"aselect='{select_expr}',asetpts=N/SR/TB[a]",
+         "-map", "[v]", "-map", "[a]", "-map", "0:s?", "-c:s", "copy",
+         "-preset", "ultrafast", "-crf", "23",
+         output_path],
         check=True,
     )
-
-
-def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str) -> None:
-    if not scenes_to_cut:
-        Path(output_path).write_bytes(Path(mkv_path).read_bytes())
-        return
-
-    segments = _build_segments(mkv_path, scenes_to_cut)
-    if not segments:
-        raise RuntimeError("No clean segments remain after cutting all scenes.")
-
-    tmpdir = Path(tempfile.mkdtemp())
-    try:
-        concat_lines = []
-        for i, (seg_start, seg_end) in enumerate(segments):
-            seg_path = tmpdir / f"seg{i:04d}.mkv"
-            _extract_segment(mkv_path, seg_start, seg_end, str(seg_path))
-            concat_lines.append(f"file '{seg_path}'")
-
-        concat_path = tmpdir / "concat.txt"
-        concat_path.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
-
-        subprocess.run(
-            ["ffmpeg", "-v", "quiet", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_path), "-c", "copy", output_path],
-            check=True,
-        )
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
