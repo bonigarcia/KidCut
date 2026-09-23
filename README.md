@@ -4,12 +4,13 @@ An AI-powered CLI tool that detects and removes adult content from MKV movies to
 
 ## Quickstart
 
-KidCut is a Python CLI tool. Install its dependencies and run it with:
+KidCut is a Python CLI tool. Run it from the repository root with:
 
 ```bash
-pip install -e .
 python -m kidcut
 ```
+
+Before the first run, install its dependencies (e.g., with `pip install -e .`).
 
 ### Requirements
 
