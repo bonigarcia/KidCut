@@ -1,5 +1,7 @@
 import json
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 from kidcut.models import CutScene, MkvTrack
@@ -42,6 +44,27 @@ def get_timestamp_seconds(ts: str) -> float:
     return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
 
 
+def _show_progress(duration: float, stream) -> None:
+    line = ""
+    while True:
+        chunk = stream.read(4096)
+        if not chunk:
+            break
+        line += chunk
+        while "\n" in line:
+            l, line = line.split("\n", 1)
+            if l.startswith("frame="):
+                m = re.search(r"time=(\d+):(\d+):([\d.]+)", l)
+                if m:
+                    h, min_, s = float(m.group(1)), float(m.group(2)), float(m.group(3))
+                    current = h * 3600 + min_ * 60 + s
+                    pct = min(current / duration * 100, 100)
+                    sys.stdout.write(f"\r\x1b[K[{pct:>3.0f}%] {l}")
+                    sys.stdout.flush()
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
 def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, margin: float = 0.0) -> None:
     if not scenes_to_cut:
         Path(output_path).write_bytes(Path(mkv_path).read_bytes())
@@ -71,7 +94,7 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, m
 
     select_expr = "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in keep_segments)
 
-    subprocess.run(
+    proc = subprocess.Popen(
         ["ffmpeg", "-y",
          "-i", mkv_path,
          "-vf", f"select='{select_expr}',setpts=N/FRAME_RATE/TB",
@@ -79,5 +102,12 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, m
          "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
          "-c:a", "aac", "-b:a", "640k",
          output_path],
-        check=True, capture_output=True, text=True,
+        stderr=subprocess.PIPE,
+        text=True,
     )
+
+    _show_progress(duration, proc.stderr)
+
+    ret = proc.wait()
+    if ret != 0:
+        raise RuntimeError(f"ffmpeg failed with exit code {ret}.")
