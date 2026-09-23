@@ -111,3 +111,27 @@ def cut_scenes(mkv_path: str, scenes_to_cut: list[CutScene], output_path: str, m
     ret = proc.wait()
     if ret != 0:
         raise RuntimeError(f"ffmpeg failed with exit code {ret}.")
+
+    remux_mkv(output_path)
+
+
+def remux_mkv(path: str) -> None:
+    p = Path(path)
+    if not p.exists():
+        return
+    tmp = p.with_suffix(".tmp.mkv")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y",
+             "-i", path,
+             "-c", "copy",
+             "-map", "0",
+             "-fflags", "+genpts",
+             str(tmp)],
+            check=True, capture_output=True, text=True,
+        )
+        tmp.replace(p)
+    except subprocess.CalledProcessError as e:
+        if tmp.exists():
+            tmp.unlink()
+        raise RuntimeError(f"remux failed: {e.stderr[:500]}")
